@@ -35,6 +35,7 @@ export function useSpeech(): UseSpeechReturn {
   const isListeningRef = useRef(false); // Track user intent to listen
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const finalTranscriptRef = useRef(''); // Track accumulated final transcript
+  const voicesLoadedRef = useRef(false);
 
   // Clear error after a delay
   const clearErrorAfterDelay = useCallback((delay = 3000) => {
@@ -44,6 +45,29 @@ export function useSpeech(): UseSpeechReturn {
     errorTimeoutRef.current = setTimeout(() => {
       setErrorMessage(null);
     }, delay);
+  }, []);
+
+  // Ensure voices are loaded (some browsers load async)
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis?.getVoices();
+      if (voices && voices.length > 0) {
+        voicesLoadedRef.current = true;
+      }
+    };
+
+    loadVoices();
+    
+    // Chrome loads voices asynchronously
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
   }, []);
 
   const startListening = useCallback(() => {
@@ -200,20 +224,73 @@ export function useSpeech(): UseSpeechReturn {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
+    
+    // Voice settings for clear, professional tone
+    utterance.rate = 0.95;      // Slightly slower for clarity
+    utterance.pitch = 0.95;     // Slightly lower for male voice
     utterance.volume = 1;
+    utterance.lang = 'en-US';   // Force US English
 
-    // Try to use a natural voice
+    // Get available voices
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v =>
-      v.name.includes('Google') ||
-      v.name.includes('Natural') ||
-      v.name.includes('Samantha')
-    ) || voices[0];
+    
+    // Filter for US English voices
+    const usEnglishVoices = voices.filter(v => 
+      v.lang === 'en-US' || v.lang.startsWith('en-US')
+    );
 
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    // Priority list for high-quality US English male voices
+    const preferredMaleVoiceNames = [
+      'Google US English Male',
+      'Microsoft David',
+      'Microsoft Guy Online',
+      'Alex',                    // macOS male voice
+      'Daniel',                  // iOS/macOS UK but clear
+      'Aaron',                   // macOS
+      'Google US English',
+      'Microsoft Mark',
+      'Fred',                    // macOS fallback
+    ];
+
+    // Find the best matching voice
+    let selectedVoice: SpeechSynthesisVoice | null = null;
+
+    // First: Try to find a preferred male voice
+    for (const name of preferredMaleVoiceNames) {
+      selectedVoice = usEnglishVoices.find(v => 
+        v.name.includes(name)
+      ) || null;
+      if (selectedVoice) break;
+    }
+
+    // Second: Look for any US English voice with 'Male' in name
+    if (!selectedVoice) {
+      selectedVoice = usEnglishVoices.find(v => 
+        v.name.toLowerCase().includes('male')
+      ) || null;
+    }
+
+    // Third: Look for voices that typically sound male (David, James, etc)
+    if (!selectedVoice) {
+      const maleNames = ['david', 'james', 'mark', 'guy', 'alex', 'aaron', 'fred'];
+      selectedVoice = usEnglishVoices.find(v => 
+        maleNames.some(name => v.name.toLowerCase().includes(name))
+      ) || null;
+    }
+
+    // Fourth: Fall back to first US English voice
+    if (!selectedVoice) {
+      selectedVoice = usEnglishVoices[0] || null;
+    }
+
+    // Fifth: Ultimate fallback to any English voice
+    if (!selectedVoice) {
+      selectedVoice = voices.find(v => v.lang.startsWith('en')) || voices[0] || null;
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      console.log('Using voice:', selectedVoice.name, selectedVoice.lang);
     }
 
     utterance.onstart = () => {
