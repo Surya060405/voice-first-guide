@@ -34,6 +34,7 @@ export function useSpeech(): UseSpeechReturn {
   const synthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const isListeningRef = useRef(false); // Track user intent to listen
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const finalTranscriptRef = useRef(''); // Track accumulated final transcript
 
   // Clear error after a delay
   const clearErrorAfterDelay = useCallback((delay = 3000) => {
@@ -73,23 +74,24 @@ export function useSpeech(): UseSpeechReturn {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
+        let fullFinal = '';
+        let currentInterim = '';
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        // Build complete transcript from all results (not just from resultIndex)
+        for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
           if (result.isFinal) {
-            finalTranscript += result[0].transcript;
+            fullFinal += result[0].transcript;
           } else {
-            interimTranscript += result[0].transcript;
+            currentInterim += result[0].transcript;
           }
         }
 
-        if (finalTranscript) {
-          setTranscript(prev => prev + finalTranscript);
-        } else if (interimTranscript) {
-          setTranscript(interimTranscript);
-        }
+        // Store final transcript for submission
+        finalTranscriptRef.current = fullFinal;
+        
+        // Display full final + current interim
+        setTranscript(fullFinal + currentInterim);
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,6 +162,7 @@ export function useSpeech(): UseSpeechReturn {
     try {
       setVoiceState('listening');
       setTranscript('');
+      finalTranscriptRef.current = '';
       recognitionRef.current.start();
     } catch (e) {
       console.error('Failed to start recognition:', e);
@@ -239,6 +242,7 @@ export function useSpeech(): UseSpeechReturn {
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
+    finalTranscriptRef.current = '';
   }, []);
 
   // Cleanup on unmount
