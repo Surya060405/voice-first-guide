@@ -1,43 +1,49 @@
 
-
 # Fix Voice Input Issues
 
 ## Problem Analysis
 
-The microphone is disappearing after one attempt due to several interconnected issues in the speech recognition implementation:
+### Issue 1: Duplicated Input Text
+The speech recognition handler is incorrectly appending final transcripts to interim transcripts, causing text like "show me my last ordershow me my last order".
 
-1. **Permanent error states** - When errors occur, the system sets `isMicAvailable = false` or sets error messages that hide the mic button permanently
-2. **No auto-restart on recognition end** - Recognition stops after one phrase and doesn't continue
-3. **Gesture context lost** - Creating new recognition objects in retries breaks the user gesture requirement
-4. **State not resetting** - Error states persist even after the user might want to try again
+**Root Cause in `useSpeech.ts` (lines 88-92):**
+```
+if (finalTranscript) {
+  setTranscript(prev => prev + finalTranscript);  // Appends to existing
+} else if (interimTranscript) {
+  setTranscript(interimTranscript);  // Replaces
+}
+```
+
+The logic shows:
+1. User says "show me my last order"
+2. Interim results set transcript to "show me my last order"
+3. Final result appends, making it "show me my last ordershow me my last order"
+
+### Issue 2: Input Not Passed to Server
+The `handleStopListening` callback in `SupportInterface.tsx` captures a stale `transcript` value due to React closure behavior. When the function is called, it uses the transcript value from when the callback was created, not the current value.
 
 ---
 
 ## Solution
 
-### 1. Rewrite useSpeech Hook
+### Fix 1: Correct Transcript Handling in `useSpeech.ts`
 
-**Key changes:**
-- Initialize recognition once and reuse it (preserve gesture context)
-- Use `continuous = true` for ongoing listening
-- Add `isListeningRef` flag to control auto-restart behavior on `onend`
-- Never permanently disable mic availability unless truly unsupported
-- Clear error states when user starts new listening session
-- Separate "soft" errors (no-speech, network) from "hard" errors (not-allowed)
+Track interim and final transcripts separately. Only store finalized text in the main transcript, and use a separate ref for the complete accumulated text.
 
-### 2. Update SupportInterface Component
+**Changes:**
+- Use a ref to track accumulated final transcript
+- For interim results, show the accumulated finals + current interim
+- For final results, append to the accumulated finals ref
+- Reset both on `startListening` and `clearTranscript`
 
-**Key changes:**
-- Remove condition that hides mic based on error message content
-- Always show the mic button if the browser supports speech recognition
-- Show errors as temporary notifications, not permanent blockers
-- Add a "retry" mechanism that clears errors on new attempt
+### Fix 2: Fix Stale Closure in `SupportInterface.tsx`
 
-### 3. Fix Error Handling Logic
+Use a ref to track the latest transcript value, ensuring `handleStopListening` always accesses the current transcript.
 
-**Error Categories:**
-- **Hard errors** (mic truly unavailable): `not-allowed` after user denies permission
-- **Soft errors** (temporary, allow retry): `network`, `no-speech`, `audio-capture`, `aborted`
+**Changes:**
+- Add a `transcriptRef` that stays in sync with `transcript`
+- Use `transcriptRef.current` in `handleStopListening` instead of the potentially stale `transcript` variable
 
 ---
 
@@ -46,38 +52,82 @@ The microphone is disappearing after one attempt due to several interconnected i
 ### File: `src/hooks/useSpeech.ts`
 
 ```text
-Changes:
-- Line 23: Initialize isMicAvailable based only on browser support, not permission
-- Line 28-30: Add isListeningRef to track user intent
-- Line 34-52: Remove permission check on mount (let it fail gracefully on use)
-- Line 54-170: Rewrite startListening:
-  - Set continuous = true
-  - Use isListeningRef to control behavior
-  - Clear errors on start
-  - Handle onend to auto-restart if still intending to listen
-- Line 103-151: Soften error handling:
-  - network/no-speech: Show message but don't disable mic
-  - not-allowed: Only case that sets isMicAvailable = false
-  - All errors: Clear after 3 seconds
+Line 36: Add finalTranscriptRef = useRef('')
+
+Lines 75-93: Rewrite onresult handler:
+- Build full transcript from event.results (not accumulating)
+- Set transcript to full final + current interim
+- Store only finals in ref for submission
+
+Line 162: In startListening, reset finalTranscriptRef.current = ''
+
+Line 241: In clearTranscript, reset finalTranscriptRef.current = ''
+```
+
+**New onresult logic:**
+```
+recognition.onresult = (event) => {
+  let fullFinal = '';
+  let currentInterim = '';
+
+  // Build complete transcript from all results
+  for (let i = 0; i < event.results.length; i++) {
+    const result = event.results[i];
+    if (result.isFinal) {
+      fullFinal += result[0].transcript;
+    } else {
+      currentInterim += result[0].transcript;
+    }
+  }
+
+  // Store final transcript for submission
+  finalTranscriptRef.current = fullFinal;
+  
+  // Display full final + current interim
+  setTranscript(fullFinal + currentInterim);
+};
 ```
 
 ### File: `src/components/SupportInterface.tsx`
 
 ```text
-Changes:
-- Line 207-218: Always show VoiceButton if browser supports it
-- Line 220-226: Show error banner as dismissible notification
-- Remove logic that permanently hides mic based on error content
+Line 45: Add transcriptRef = useRef('')
+
+Lines 47-49: Add useEffect to sync transcriptRef with transcript:
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+Lines 92-97: Update handleStopListening to use transcriptRef.current:
+  const handleStopListening = useCallback(() => {
+    stopListening();
+    const currentTranscript = transcriptRef.current;
+    if (currentTranscript.trim()) {
+      // Submit using the ref value
+      handleVoiceSubmit();
+    }
+  }, [stopListening, handleVoiceSubmit]);
 ```
 
 ---
 
-## Summary of Behavior After Fix
+## Summary of Changes
 
-1. User clicks mic button - recognition starts
-2. If speech detected - transcript updates in real-time
-3. If silence/no-speech - shows temporary message, mic stays visible
-4. If network error - shows temporary message, mic stays visible
-5. User can always click mic again to retry
-6. Mic only disappears if user explicitly denies permission in browser
+| File | Change | Purpose |
+|------|--------|---------|
+| `useSpeech.ts` | Add `finalTranscriptRef` | Track accumulated final transcript separately |
+| `useSpeech.ts` | Rewrite `onresult` handler | Build complete transcript from all results, not append |
+| `useSpeech.ts` | Reset ref on start/clear | Ensure clean state for each session |
+| `SupportInterface.tsx` | Add `transcriptRef` | Avoid stale closure issue |
+| `SupportInterface.tsx` | Sync ref with state | Keep ref current |
+| `SupportInterface.tsx` | Use ref in `handleStopListening` | Access current transcript value |
 
+---
+
+## Expected Behavior After Fix
+
+1. User clicks mic and says "show me my last order"
+2. Transcript shows "show me my last order" (not duplicated)
+3. User clicks mic again to stop
+4. Message "show me my last order" is sent to server
+5. AI response is received and spoken
