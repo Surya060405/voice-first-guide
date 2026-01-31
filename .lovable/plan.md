@@ -1,135 +1,83 @@
 
 
-# AI Voice Customer Support Agent
+# Fix Voice Input Issues
 
-A full-stack voice-first customer support agent for e-commerce that handles product discovery, order tracking, cancellations, returns, and policy explanations using your provided datasets.
+## Problem Analysis
 
----
+The microphone is disappearing after one attempt due to several interconnected issues in the speech recognition implementation:
 
-## 🎨 Interface Design
-
-**Modern & Minimal Style**
-- Clean white background with subtle gray accents
-- Professional call-center aesthetic with clear visual hierarchy
-- Responsive design that works on desktop and mobile
+1. **Permanent error states** - When errors occur, the system sets `isMicAvailable = false` or sets error messages that hide the mic button permanently
+2. **No auto-restart on recognition end** - Recognition stops after one phrase and doesn't continue
+3. **Gesture context lost** - Creating new recognition objects in retries breaks the user gesture requirement
+4. **State not resetting** - Error states persist even after the user might want to try again
 
 ---
 
-## 📱 Frontend Features
+## Solution
 
-### Entry Screen
-- **Customer ID Input** - Required field before starting any conversation
-- Validates customer ID exists in the order database
-- Stores customer context for personalized support
+### 1. Rewrite useSpeech Hook
 
-### Main Support Interface
-- **Voice Control Panel**
-  - Large microphone button with visual feedback
-  - "Listening" indicator with audio waveform animation
-  - "Speaking" indicator when AI responds
-  
-- **Live Transcript Panel**
-  - Real-time display of user's spoken words
-  - Shows speech-to-text conversion as user speaks
-  
-- **Assistant Response Panel**
-  - AI responses displayed with clear formatting
-  - Product cards for search results (with images, prices, ratings)
-  - Order status cards for tracking queries
-  
-- **Chat Fallback**
-  - Text input field always available
-  - Auto-activates if microphone permission denied
-  - Seamless switch between voice and text
+**Key changes:**
+- Initialize recognition once and reuse it (preserve gesture context)
+- Use `continuous = true` for ongoing listening
+- Add `isListeningRef` flag to control auto-restart behavior on `onend`
+- Never permanently disable mic availability unless truly unsupported
+- Clear error states when user starts new listening session
+- Separate "soft" errors (no-speech, network) from "hard" errors (not-allowed)
 
-- **Conversation History**
-  - Scrollable message thread showing full conversation
-  - Persisted in localStorage for returning users
-  - Clear history option per customer ID
+### 2. Update SupportInterface Component
+
+**Key changes:**
+- Remove condition that hides mic based on error message content
+- Always show the mic button if the browser supports speech recognition
+- Show errors as temporary notifications, not permanent blockers
+- Add a "retry" mechanism that clears errors on new attempt
+
+### 3. Fix Error Handling Logic
+
+**Error Categories:**
+- **Hard errors** (mic truly unavailable): `not-allowed` after user denies permission
+- **Soft errors** (temporary, allow retry): `network`, `no-speech`, `audio-capture`, `aborted`
 
 ---
 
-## 🔧 Backend Services (Edge Functions)
+## Technical Implementation
 
-### Data Management
-- Load all JSON datasets at startup
-- **Products Service**: Search by name, category, price range; get details
-- **FAQ Service**: Lookup FAQs by product ID
-- **Orders Service**: Track orders, validate customer ownership
-- **Policy Service**: Retrieve policy information by type
+### File: `src/hooks/useSpeech.ts`
 
-### AI Agent Endpoint
-- Powered by Lovable AI (Gemini model)
-- Streaming responses for real-time voice output
-- Session context memory (customerId, lastOrderId, lastProductId, lastIntent)
+```text
+Changes:
+- Line 23: Initialize isMicAvailable based only on browser support, not permission
+- Line 28-30: Add isListeningRef to track user intent
+- Line 34-52: Remove permission check on mount (let it fail gracefully on use)
+- Line 54-170: Rewrite startListening:
+  - Set continuous = true
+  - Use isListeningRef to control behavior
+  - Clear errors on start
+  - Handle onend to auto-restart if still intending to listen
+- Line 103-151: Soften error handling:
+  - network/no-speech: Show message but don't disable mic
+  - not-allowed: Only case that sets isMicAvailable = false
+  - All errors: Clear after 3 seconds
+```
 
----
+### File: `src/components/SupportInterface.tsx`
 
-## 🤖 AI Agent Capabilities
-
-### Intent Recognition
-The agent will understand and handle:
-- **Product Search**: "Show me laptops under $500"
-- **Product Details**: "Tell me about the Luma Monitor Pro"
-- **Product FAQs**: "What's the warranty on this product?"
-- **Order Tracking**: "Where is my order O0001?"
-- **Cancellation Requests**: "I want to cancel my order"
-- **Return Requests**: "How do I return this item?"
-- **Policy Questions**: "What's your refund policy?"
-
-### Smart Context Memory
-- Remembers customer ID throughout session
-- References last discussed product for follow-ups ("What's the price?" after discussing a product)
-- Tracks last order for natural conversation flow
-
-### Tool Functions (Function Calling)
-1. `searchProducts(filters)` - Search by name, category, price range
-2. `getProductDetails(productId)` - Full product information
-3. `getProductFAQs(productId)` - Product-specific FAQs
-4. `trackOrder(orderId, customerId)` - Order status lookup
-5. `initiateCancellation(orderId)` - Returns confirmation message (no data mutation)
-6. `initiateReturn(orderId)` - Returns confirmation message (no data mutation)
-7. `getPolicy(policyType)` - Return, refund, cancellation, or delivery policy
+```text
+Changes:
+- Line 207-218: Always show VoiceButton if browser supports it
+- Line 220-226: Show error banner as dismissible notification
+- Remove logic that permanently hides mic based on error content
+```
 
 ---
 
-## 🎤 Voice Features
+## Summary of Behavior After Fix
 
-### Speech-to-Text (Input)
-- Web Speech API for browser-native voice recognition
-- Real-time transcription display
-- Graceful fallback to chat if mic unavailable
-
-### Text-to-Speech (Output)
-- Browser SpeechSynthesis for AI responses
-- Clear, natural speaking voice
-- Can be muted/unmuted by user
-
-### Visual States
-- **Idle**: Microphone ready
-- **Listening**: Active recording indicator
-- **Processing**: AI thinking indicator
-- **Speaking**: AI response playback
-
----
-
-## 📋 Data Files Integration
-
-Your uploaded files will be converted to:
-- `policies.json` - Extracted from your Word document
-- `products.json` - Your product catalog
-- `faqs.json` - Product FAQs
-- `orders.json` - Order database
-
-All stored in the edge function and queried locally (no external API calls for data).
-
----
-
-## 💬 Response Behavior
-
-- Short, conversational sentences optimized for voice
-- Always confirms actions ("I have initiated your cancellation request")
-- Asks clarifying questions only when essential data is missing
-- Maintains friendly, professional support tone
-- Never invents product or order information
+1. User clicks mic button - recognition starts
+2. If speech detected - transcript updates in real-time
+3. If silence/no-speech - shows temporary message, mic stays visible
+4. If network error - shows temporary message, mic stays visible
+5. User can always click mic again to retry
+6. Mic only disappears if user explicitly denies permission in browser
 
