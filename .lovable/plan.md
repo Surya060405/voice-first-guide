@@ -1,49 +1,16 @@
 
-# Fix Voice Input Issues
 
-## Problem Analysis
+# Improve AI Voice Output - US English Male Voice
 
-### Issue 1: Duplicated Input Text
-The speech recognition handler is incorrectly appending final transcripts to interim transcripts, causing text like "show me my last ordershow me my last order".
+## Current Implementation
 
-**Root Cause in `useSpeech.ts` (lines 88-92):**
-```
-if (finalTranscript) {
-  setTranscript(prev => prev + finalTranscript);  // Appends to existing
-} else if (interimTranscript) {
-  setTranscript(interimTranscript);  // Replaces
-}
-```
-
-The logic shows:
-1. User says "show me my last order"
-2. Interim results set transcript to "show me my last order"
-3. Final result appends, making it "show me my last ordershow me my last order"
-
-### Issue 2: Input Not Passed to Server
-The `handleStopListening` callback in `SupportInterface.tsx` captures a stale `transcript` value due to React closure behavior. When the function is called, it uses the transcript value from when the callback was created, not the current value.
+The `speak` function in `src/hooks/useSpeech.ts` currently uses the browser's built-in `SpeechSynthesis` API with a generic voice selection that prioritizes "Google", "Natural", or "Samantha" voices. This doesn't ensure consistency in accent, gender, or pronunciation quality.
 
 ---
 
 ## Solution
 
-### Fix 1: Correct Transcript Handling in `useSpeech.ts`
-
-Track interim and final transcripts separately. Only store finalized text in the main transcript, and use a separate ref for the complete accumulated text.
-
-**Changes:**
-- Use a ref to track accumulated final transcript
-- For interim results, show the accumulated finals + current interim
-- For final results, append to the accumulated finals ref
-- Reset both on `startListening` and `clearTranscript`
-
-### Fix 2: Fix Stale Closure in `SupportInterface.tsx`
-
-Use a ref to track the latest transcript value, ensuring `handleStopListening` always accesses the current transcript.
-
-**Changes:**
-- Add a `transcriptRef` that stays in sync with `transcript`
-- Use `transcriptRef.current` in `handleStopListening` instead of the potentially stale `transcript` variable
+Update the voice selection logic to specifically target US English male voices with clear pronunciation.
 
 ---
 
@@ -51,83 +18,179 @@ Use a ref to track the latest transcript value, ensuring `handleStopListening` a
 
 ### File: `src/hooks/useSpeech.ts`
 
-```text
-Line 36: Add finalTranscriptRef = useRef('')
+**Update the `speak` function (lines 196-233):**
 
-Lines 75-93: Rewrite onresult handler:
-- Build full transcript from event.results (not accumulating)
-- Set transcript to full final + current interim
-- Store only finals in ref for submission
+Replace the current voice selection logic with a prioritized search for US English male voices:
 
-Line 162: In startListening, reset finalTranscriptRef.current = ''
+```typescript
+const speak = useCallback((text: string) => {
+  if (isMuted || !window.speechSynthesis) return;
 
-Line 241: In clearTranscript, reset finalTranscriptRef.current = ''
-```
+  // Cancel any ongoing speech
+  window.speechSynthesis.cancel();
 
-**New onresult logic:**
-```
-recognition.onresult = (event) => {
-  let fullFinal = '';
-  let currentInterim = '';
+  const utterance = new SpeechSynthesisUtterance(text);
+  
+  // Voice settings for clear, professional tone
+  utterance.rate = 0.95;      // Slightly slower for clarity
+  utterance.pitch = 0.95;     // Slightly lower for male voice
+  utterance.volume = 1;
+  utterance.lang = 'en-US';   // Force US English
 
-  // Build complete transcript from all results
-  for (let i = 0; i < event.results.length; i++) {
-    const result = event.results[i];
-    if (result.isFinal) {
-      fullFinal += result[0].transcript;
-    } else {
-      currentInterim += result[0].transcript;
-    }
+  // Get available voices
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Filter for US English voices
+  const usEnglishVoices = voices.filter(v => 
+    v.lang === 'en-US' || v.lang.startsWith('en-US')
+  );
+
+  // Priority list for high-quality US English male voices
+  const preferredMaleVoiceNames = [
+    'Google US English Male',
+    'Microsoft David',
+    'Microsoft Guy Online',
+    'Alex',                    // macOS male voice
+    'Daniel',                  // iOS/macOS UK but clear
+    'Aaron',                   // macOS
+    'Google US English',
+    'Microsoft Mark',
+    'Fred',                    // macOS fallback
+  ];
+
+  // Find the best matching voice
+  let selectedVoice = null;
+
+  // First: Try to find a preferred male voice
+  for (const name of preferredMaleVoiceNames) {
+    selectedVoice = usEnglishVoices.find(v => 
+      v.name.includes(name)
+    );
+    if (selectedVoice) break;
   }
 
-  // Store final transcript for submission
-  finalTranscriptRef.current = fullFinal;
-  
-  // Display full final + current interim
-  setTranscript(fullFinal + currentInterim);
-};
+  // Second: Look for any US English voice with 'Male' in name
+  if (!selectedVoice) {
+    selectedVoice = usEnglishVoices.find(v => 
+      v.name.toLowerCase().includes('male')
+    );
+  }
+
+  // Third: Look for voices that typically sound male (David, James, etc)
+  if (!selectedVoice) {
+    const maleNames = ['david', 'james', 'mark', 'guy', 'alex', 'aaron', 'fred'];
+    selectedVoice = usEnglishVoices.find(v => 
+      maleNames.some(name => v.name.toLowerCase().includes(name))
+    );
+  }
+
+  // Fourth: Fall back to first US English voice
+  if (!selectedVoice) {
+    selectedVoice = usEnglishVoices[0];
+  }
+
+  // Fifth: Ultimate fallback to any English voice
+  if (!selectedVoice) {
+    selectedVoice = voices.find(v => v.lang.startsWith('en')) || voices[0];
+  }
+
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+    console.log('Using voice:', selectedVoice.name, selectedVoice.lang);
+  }
+
+  utterance.onstart = () => {
+    setVoiceState('speaking');
+  };
+
+  utterance.onend = () => {
+    setVoiceState('idle');
+  };
+
+  utterance.onerror = () => {
+    setVoiceState('idle');
+  };
+
+  synthesisRef.current = utterance;
+  window.speechSynthesis.speak(utterance);
+}, [isMuted]);
 ```
 
-### File: `src/components/SupportInterface.tsx`
+**Add voice initialization on component mount:**
 
-```text
-Line 45: Add transcriptRef = useRef('')
+The browser's `getVoices()` may return an empty array initially. Add an effect to ensure voices are loaded:
 
-Lines 47-49: Add useEffect to sync transcriptRef with transcript:
-  useEffect(() => {
-    transcriptRef.current = transcript;
-  }, [transcript]);
+```typescript
+// Add after line 37 (after finalTranscriptRef)
+const voicesLoadedRef = useRef(false);
 
-Lines 92-97: Update handleStopListening to use transcriptRef.current:
-  const handleStopListening = useCallback(() => {
-    stopListening();
-    const currentTranscript = transcriptRef.current;
-    if (currentTranscript.trim()) {
-      // Submit using the ref value
-      handleVoiceSubmit();
+// Add new useEffect after line 47 (after clearErrorAfterDelay)
+useEffect(() => {
+  // Ensure voices are loaded (some browsers load async)
+  const loadVoices = () => {
+    const voices = window.speechSynthesis?.getVoices();
+    if (voices && voices.length > 0) {
+      voicesLoadedRef.current = true;
     }
-  }, [stopListening, handleVoiceSubmit]);
+  };
+
+  loadVoices();
+  
+  // Chrome loads voices asynchronously
+  if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+
+  return () => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = null;
+    }
+  };
+}, []);
 ```
 
 ---
 
-## Summary of Changes
+## Voice Selection Priority
 
-| File | Change | Purpose |
-|------|--------|---------|
-| `useSpeech.ts` | Add `finalTranscriptRef` | Track accumulated final transcript separately |
-| `useSpeech.ts` | Rewrite `onresult` handler | Build complete transcript from all results, not append |
-| `useSpeech.ts` | Reset ref on start/clear | Ensure clean state for each session |
-| `SupportInterface.tsx` | Add `transcriptRef` | Avoid stale closure issue |
-| `SupportInterface.tsx` | Sync ref with state | Keep ref current |
-| `SupportInterface.tsx` | Use ref in `handleStopListening` | Access current transcript value |
+| Priority | Voice Name | Platform | Notes |
+|----------|------------|----------|-------|
+| 1 | Google US English Male | Chrome | High quality, clear |
+| 2 | Microsoft David | Windows/Edge | Professional, clear |
+| 3 | Microsoft Guy Online | Windows/Edge | Natural male voice |
+| 4 | Alex | macOS | Default male voice |
+| 5 | Microsoft Mark | Windows | Alternative male |
+| 6 | Any with "male" in name | Cross-platform | Generic fallback |
+| 7 | Any US English | Cross-platform | Accent fallback |
+| 8 | Any English | Cross-platform | Ultimate fallback |
+
+---
+
+## Voice Settings Explained
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `rate` | 0.95 | Slightly slower for better clarity |
+| `pitch` | 0.95 | Slightly lower for more masculine tone |
+| `volume` | 1 | Full volume |
+| `lang` | 'en-US' | Force US English pronunciation |
 
 ---
 
 ## Expected Behavior After Fix
 
-1. User clicks mic and says "show me my last order"
-2. Transcript shows "show me my last order" (not duplicated)
-3. User clicks mic again to stop
-4. Message "show me my last order" is sent to server
-5. AI response is received and spoken
+1. Voice output will consistently use a US English male voice
+2. Clear, professional pronunciation
+3. Slightly slower pace for better comprehension
+4. Graceful fallback if preferred voice isn't available
+5. Console logs which voice is selected for debugging
+
+---
+
+## Browser Compatibility Notes
+
+- **Chrome**: Uses Google voices (high quality)
+- **Edge**: Uses Microsoft voices (David, Guy Online)
+- **Safari/macOS**: Uses Apple voices (Alex, Aaron)
+- **Firefox**: Limited voice selection, may use system default
+
