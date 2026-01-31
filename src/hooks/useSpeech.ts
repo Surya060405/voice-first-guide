@@ -20,164 +20,168 @@ interface UseSpeechReturn {
 export function useSpeech(): UseSpeechReturn {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
-  const [isMicAvailable, setIsMicAvailable] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // Check browser support once - this is the only thing that permanently disables mic
+  const SpeechRecognition = typeof window !== 'undefined' 
+    ? (window.SpeechRecognition || window.webkitSpeechRecognition) 
+    : null;
+  const [isMicAvailable, setIsMicAvailable] = useState(!!SpeechRecognition);
   
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const synthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const retryCountRef = useRef(0);
-  const maxRetries = 3;
+  const isListeningRef = useRef(false); // Track user intent to listen
+  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check for browser support
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setIsMicAvailable(false);
-      setErrorMessage('Voice input not supported in this browser. Please use the text input.');
-      return;
+  // Clear error after a delay
+  const clearErrorAfterDelay = useCallback((delay = 3000) => {
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
     }
-
-    // Check microphone permission
-    navigator.mediaDevices?.getUserMedia({ audio: true })
-      .then(() => {
-        setIsMicAvailable(true);
-        setErrorMessage(null);
-      })
-      .catch(() => {
-        setIsMicAvailable(false);
-        setErrorMessage('Microphone access denied. Please allow microphone access or use text input.');
-      });
+    errorTimeoutRef.current = setTimeout(() => {
+      setErrorMessage(null);
+    }, delay);
   }, []);
 
   const startListening = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setIsMicAvailable(false);
-      setErrorMessage('Voice input not supported. Please use text input instead.');
+      setErrorMessage('Voice input not supported in this browser.');
       return;
     }
 
-    // Clear previous error
+    // Clear any previous error
     setErrorMessage(null);
-    retryCountRef.current = 0;
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
 
     // Stop any ongoing speech
     window.speechSynthesis?.cancel();
     
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false; // Changed to false for more reliable results
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    // Mark that user wants to listen
+    isListeningRef.current = true;
 
-    recognition.onstart = () => {
-      setVoiceState('listening');
-      setTranscript('');
-      setErrorMessage(null);
-    };
+    // Reuse existing recognition or create new one
+    if (!recognitionRef.current) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true; // Keep listening
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onresult = (event: any) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript;
-        } else {
-          interimTranscript += result[0].transcript;
-        }
-      }
-
-      // Always update with the latest transcript
-      if (finalTranscript) {
-        setTranscript(prev => prev + finalTranscript);
-      } else if (interimTranscript) {
-        // For interim results, show what we have so far
-        setTranscript(interimTranscript);
-      }
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
-      
-      // Handle different error types
-      switch (event.error) {
-        case 'not-allowed':
-          setIsMicAvailable(false);
-          setErrorMessage('Microphone access denied. Please allow access in browser settings.');
-          setVoiceState('idle');
-          break;
-        case 'network':
-          // Network errors are common in iframes/preview - retry a few times
-          if (retryCountRef.current < maxRetries) {
-            retryCountRef.current++;
-            console.log(`Network error, retrying... (${retryCountRef.current}/${maxRetries})`);
-            // Brief delay before retry
-            setTimeout(() => {
-              if (recognitionRef.current) {
-                try {
-                  recognitionRef.current.start();
-                } catch {
-                  // Already started or other issue
-                  setVoiceState('idle');
-                  setErrorMessage('Voice recognition unavailable. Please use text input.');
-                }
-              }
-            }, 500);
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
           } else {
-            setVoiceState('idle');
-            setErrorMessage('Voice recognition unavailable in this context. Please use the text input below.');
+            interimTranscript += result[0].transcript;
           }
-          break;
-        case 'no-speech':
-          setVoiceState('idle');
-          setErrorMessage('No speech detected. Please try again.');
-          break;
-        case 'audio-capture':
-          setVoiceState('idle');
-          setErrorMessage('No microphone found. Please connect a microphone or use text input.');
-          break;
-        case 'aborted':
-          // User aborted, no error message needed
-          setVoiceState('idle');
-          break;
-        default:
-          setVoiceState('idle');
-          setErrorMessage('Voice recognition error. Please use text input.');
-      }
-    };
+        }
 
-    recognition.onend = () => {
-      // Only set to idle if we're not in a retry cycle
-      if (retryCountRef.current >= maxRetries || retryCountRef.current === 0) {
-        setVoiceState('idle');
-      }
-    };
+        if (finalTranscript) {
+          setTranscript(prev => prev + finalTranscript);
+        } else if (interimTranscript) {
+          setTranscript(interimTranscript);
+        }
+      };
 
-    recognitionRef.current = recognition;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        
+        switch (event.error) {
+          case 'not-allowed':
+            // This is the ONLY error that permanently disables mic
+            setIsMicAvailable(false);
+            setErrorMessage('Microphone access denied. Please allow access in browser settings.');
+            isListeningRef.current = false;
+            setVoiceState('idle');
+            break;
+          case 'network':
+            // Soft error - show message but allow retry
+            setErrorMessage('Network error. Tap mic to try again.');
+            clearErrorAfterDelay();
+            isListeningRef.current = false;
+            setVoiceState('idle');
+            break;
+          case 'no-speech':
+            // Soft error - common, just show brief message
+            setErrorMessage('No speech detected. Tap mic to try again.');
+            clearErrorAfterDelay();
+            isListeningRef.current = false;
+            setVoiceState('idle');
+            break;
+          case 'audio-capture':
+            // Soft error - mic might be in use
+            setErrorMessage('Could not capture audio. Check your microphone.');
+            clearErrorAfterDelay(5000);
+            isListeningRef.current = false;
+            setVoiceState('idle');
+            break;
+          case 'aborted':
+            // User or system aborted - no message needed
+            isListeningRef.current = false;
+            setVoiceState('idle');
+            break;
+          default:
+            // Unknown error - soft failure
+            setErrorMessage('Voice error. Tap mic to try again.');
+            clearErrorAfterDelay();
+            isListeningRef.current = false;
+            setVoiceState('idle');
+        }
+      };
+
+      recognition.onend = () => {
+        // Only restart if user still wants to listen and we haven't hit a hard error
+        if (isListeningRef.current && isMicAvailable) {
+          try {
+            recognition.start();
+          } catch {
+            // Failed to restart - stop gracefully
+            isListeningRef.current = false;
+            setVoiceState('idle');
+          }
+        } else {
+          setVoiceState('idle');
+        }
+      };
+
+      recognitionRef.current = recognition;
+    }
     
     try {
-      recognition.start();
+      setVoiceState('listening');
+      setTranscript('');
+      recognitionRef.current.start();
     } catch (e) {
       console.error('Failed to start recognition:', e);
-      setVoiceState('idle');
-      setErrorMessage('Failed to start voice input. Please use text input.');
+      // If already started, that's fine - just update state
+      if ((e as Error).message?.includes('already started')) {
+        setVoiceState('listening');
+      } else {
+        setErrorMessage('Failed to start voice input. Tap to try again.');
+        clearErrorAfterDelay();
+        setVoiceState('idle');
+      }
     }
-  }, []);
+  }, [SpeechRecognition, isMicAvailable, clearErrorAfterDelay]);
 
   const stopListening = useCallback(() => {
-    retryCountRef.current = maxRetries; // Prevent retries
+    isListeningRef.current = false;
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch {
         // Already stopped
       }
-      recognitionRef.current = null;
     }
     setVoiceState('idle');
   }, []);
@@ -235,14 +239,20 @@ export function useSpeech(): UseSpeechReturn {
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
-    setErrorMessage(null);
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      retryCountRef.current = maxRetries;
-      recognitionRef.current?.stop();
+      isListeningRef.current = false;
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // Already stopped
+      }
       window.speechSynthesis?.cancel();
     };
   }, []);
