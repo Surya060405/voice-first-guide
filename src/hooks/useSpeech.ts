@@ -35,6 +35,9 @@ export function useSpeech(): UseSpeechReturn {
   const isListeningRef = useRef(false); // Track user intent to listen
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const finalTranscriptRef = useRef(''); // Track accumulated final transcript
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const MAX_RETRIES = 3;
 
   // Clear error after a delay
   const clearErrorAfterDelay = useCallback((delay = 3000) => {
@@ -108,12 +111,23 @@ export function useSpeech(): UseSpeechReturn {
             recognitionRef.current = null;
             break;
           case 'network':
-            // Soft error - show message but allow retry
-            setErrorMessage('Network error. Tap mic to try again.');
-            clearErrorAfterDelay();
-            isListeningRef.current = false;
-            setVoiceState('idle');
-            recognitionRef.current = null;
+            // Auto-retry with exponential backoff
+            if (retryCountRef.current < MAX_RETRIES) {
+              retryCountRef.current++;
+              const delay = Math.pow(2, retryCountRef.current - 1) * 1000;
+              console.log(`Network error, retrying in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+              retryTimeoutRef.current = setTimeout(() => {
+                recognitionRef.current = null;
+                startListening();
+              }, delay);
+            } else {
+              setErrorMessage('Network error. Please check your connection and try again.');
+              clearErrorAfterDelay(5000);
+              retryCountRef.current = 0;
+              isListeningRef.current = false;
+              setVoiceState('idle');
+              recognitionRef.current = null;
+            }
             break;
           case 'no-speech':
             // Soft error - common, just show brief message
@@ -167,6 +181,7 @@ export function useSpeech(): UseSpeechReturn {
       setVoiceState('listening');
       setTranscript('');
       finalTranscriptRef.current = '';
+      retryCountRef.current = 0; // Reset retry count on successful start
       recognitionRef.current.start();
     } catch (e) {
       console.error('Failed to start recognition:', e);
@@ -182,6 +197,13 @@ export function useSpeech(): UseSpeechReturn {
   }, [SpeechRecognition, isMicAvailable, clearErrorAfterDelay]);
 
   const stopListening = useCallback(() => {
+    // Clear any pending retry
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    retryCountRef.current = 0;
+    
     isListeningRef.current = false;
     if (recognitionRef.current) {
       try {
@@ -255,6 +277,9 @@ export function useSpeech(): UseSpeechReturn {
       isListeningRef.current = false;
       if (errorTimeoutRef.current) {
         clearTimeout(errorTimeoutRef.current);
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
       }
       try {
         recognitionRef.current?.stop();
