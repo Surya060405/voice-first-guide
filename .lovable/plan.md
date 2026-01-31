@@ -1,49 +1,31 @@
 
-# Fix Voice Input Issues
 
-## Problem Analysis
+# Fix Network Error in Voice Agent (Deployed)
 
-### Issue 1: Duplicated Input Text
-The speech recognition handler is incorrectly appending final transcripts to interim transcripts, causing text like "show me my last ordershow me my last order".
+## Root Cause Analysis
 
-**Root Cause in `useSpeech.ts` (lines 88-92):**
-```
-if (finalTranscript) {
-  setTranscript(prev => prev + finalTranscript);  // Appends to existing
-} else if (interimTranscript) {
-  setTranscript(interimTranscript);  // Replaces
-}
-```
+The "network error" in the Web Speech API is a fundamental limitation of how Chrome implements speech recognition:
 
-The logic shows:
-1. User says "show me my last order"
-2. Interim results set transcript to "show me my last order"
-3. Final result appends, making it "show me my last ordershow me my last order"
+1. **Server-side processing**: Chrome's Web Speech API sends audio to Google's speech recognition servers. As noted in MDN documentation: "On some browsers, like Chrome, using Speech Recognition on a web page involves a server-based recognition engine. Your audio is sent to a web service for recognition processing."
 
-### Issue 2: Input Not Passed to Server
-The `handleStopListening` callback in `SupportInterface.tsx` captures a stale `transcript` value due to React closure behavior. When the function is called, it uses the transcript value from when the callback was created, not the current value.
+2. **Network dependency**: The error occurs when the connection to Google's speech servers is interrupted or blocked. This can happen due to:
+   - Temporary network instability
+   - Firewall/corporate network restrictions
+   - VPN interference
+   - Browser privacy extensions blocking Google services
+   - Rate limiting from Google's servers
+
+3. **Current implementation handles it as a soft error**: The code correctly treats network errors as temporary, but could be more resilient with automatic retry logic.
 
 ---
 
-## Solution
+## Solution: Add Retry Logic with Exponential Backoff
 
-### Fix 1: Correct Transcript Handling in `useSpeech.ts`
-
-Track interim and final transcripts separately. Only store finalized text in the main transcript, and use a separate ref for the complete accumulated text.
-
-**Changes:**
-- Use a ref to track accumulated final transcript
-- For interim results, show the accumulated finals + current interim
-- For final results, append to the accumulated finals ref
-- Reset both on `startListening` and `clearTranscript`
-
-### Fix 2: Fix Stale Closure in `SupportInterface.tsx`
-
-Use a ref to track the latest transcript value, ensuring `handleStopListening` always accesses the current transcript.
-
-**Changes:**
-- Add a `transcriptRef` that stays in sync with `transcript`
-- Use `transcriptRef.current` in `handleStopListening` instead of the potentially stale `transcript` variable
+Instead of requiring users to manually tap the mic again after a network error, implement automatic retry logic that:
+- Automatically retries on network errors (up to 3 attempts)
+- Uses exponential backoff between retries
+- Only shows the error message if all retries fail
+- Improves user experience significantly
 
 ---
 
@@ -51,83 +33,108 @@ Use a ref to track the latest transcript value, ensuring `handleStopListening` a
 
 ### File: `src/hooks/useSpeech.ts`
 
+**Add retry state and refs:**
 ```text
-Line 36: Add finalTranscriptRef = useRef('')
-
-Lines 75-93: Rewrite onresult handler:
-- Build full transcript from event.results (not accumulating)
-- Set transcript to full final + current interim
-- Store only finals in ref for submission
-
-Line 162: In startListening, reset finalTranscriptRef.current = ''
-
-Line 241: In clearTranscript, reset finalTranscriptRef.current = ''
+Line 37: Add retryCountRef = useRef(0)
+Line 38: Add retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+Line 39: Add MAX_RETRIES = 3
 ```
 
-**New onresult logic:**
-```
-recognition.onresult = (event) => {
-  let fullFinal = '';
-  let currentInterim = '';
+**Update network error handling in onerror (lines 110-117):**
+```text
+Replace current network error case with:
+- Check if retryCountRef.current < MAX_RETRIES
+- If yes: increment retry count, set timeout with exponential backoff (1s, 2s, 4s)
+- In timeout: nullify recognitionRef.current, call startListening() to retry
+- If no: show error message, reset retry count, set voiceState to idle
 
-  // Build complete transcript from all results
-  for (let i = 0; i < event.results.length; i++) {
-    const result = event.results[i];
-    if (result.isFinal) {
-      fullFinal += result[0].transcript;
-    } else {
-      currentInterim += result[0].transcript;
-    }
+This turns:
+case 'network':
+  setErrorMessage('Network error. Tap mic to try again.');
+  clearErrorAfterDelay();
+  isListeningRef.current = false;
+  setVoiceState('idle');
+  recognitionRef.current = null;
+  break;
+
+Into:
+case 'network':
+  if (retryCountRef.current < MAX_RETRIES) {
+    retryCountRef.current++;
+    const delay = Math.pow(2, retryCountRef.current - 1) * 1000;
+    console.log(`Network error, retrying in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+    retryTimeoutRef.current = setTimeout(() => {
+      recognitionRef.current = null;
+      startListening();
+    }, delay);
+  } else {
+    setErrorMessage('Network error. Please check your connection and try again.');
+    clearErrorAfterDelay(5000);
+    retryCountRef.current = 0;
+    isListeningRef.current = false;
+    setVoiceState('idle');
+    recognitionRef.current = null;
   }
-
-  // Store final transcript for submission
-  finalTranscriptRef.current = fullFinal;
-  
-  // Display full final + current interim
-  setTranscript(fullFinal + currentInterim);
-};
+  break;
 ```
 
-### File: `src/components/SupportInterface.tsx`
-
+**Reset retry count on successful start (line 167):**
 ```text
-Line 45: Add transcriptRef = useRef('')
+After setVoiceState('listening'):
+retryCountRef.current = 0;
+```
 
-Lines 47-49: Add useEffect to sync transcriptRef with transcript:
-  useEffect(() => {
-    transcriptRef.current = transcript;
-  }, [transcript]);
+**Clear retry timeout in stopListening (lines 184-194):**
+```text
+Add at beginning of stopListening:
+if (retryTimeoutRef.current) {
+  clearTimeout(retryTimeoutRef.current);
+  retryTimeoutRef.current = null;
+}
+retryCountRef.current = 0;
+```
 
-Lines 92-97: Update handleStopListening to use transcriptRef.current:
-  const handleStopListening = useCallback(() => {
-    stopListening();
-    const currentTranscript = transcriptRef.current;
-    if (currentTranscript.trim()) {
-      // Submit using the ref value
-      handleVoiceSubmit();
-    }
-  }, [stopListening, handleVoiceSubmit]);
+**Clear retry timeout in cleanup effect (lines 252-266):**
+```text
+Add to cleanup:
+if (retryTimeoutRef.current) {
+  clearTimeout(retryTimeoutRef.current);
+}
 ```
 
 ---
 
 ## Summary of Changes
 
-| File | Change | Purpose |
-|------|--------|---------|
-| `useSpeech.ts` | Add `finalTranscriptRef` | Track accumulated final transcript separately |
-| `useSpeech.ts` | Rewrite `onresult` handler | Build complete transcript from all results, not append |
-| `useSpeech.ts` | Reset ref on start/clear | Ensure clean state for each session |
-| `SupportInterface.tsx` | Add `transcriptRef` | Avoid stale closure issue |
-| `SupportInterface.tsx` | Sync ref with state | Keep ref current |
-| `SupportInterface.tsx` | Use ref in `handleStopListening` | Access current transcript value |
+| Location | Change | Purpose |
+|----------|--------|---------|
+| `useSpeech.ts` lines 37-39 | Add retry refs and constant | Track retry attempts |
+| `useSpeech.ts` network case | Add auto-retry with backoff | Automatically recover from network errors |
+| `useSpeech.ts` startListening | Reset retry count on success | Clear retries after successful start |
+| `useSpeech.ts` stopListening | Clear retry timeout | Prevent retries after manual stop |
+| `useSpeech.ts` cleanup | Clear retry timeout | Cleanup on unmount |
 
 ---
 
 ## Expected Behavior After Fix
 
-1. User clicks mic and says "show me my last order"
-2. Transcript shows "show me my last order" (not duplicated)
-3. User clicks mic again to stop
-4. Message "show me my last order" is sent to server
-5. AI response is received and spoken
+1. User clicks mic, recognition starts
+2. If network error occurs:
+   - First attempt: Wait 1 second, retry automatically
+   - Second attempt: Wait 2 seconds, retry automatically  
+   - Third attempt: Wait 4 seconds, retry automatically
+3. If all 3 retries fail: Show error message "Network error. Please check your connection and try again."
+4. User can still click mic to try again manually
+5. If user clicks stop during retry: Retries are cancelled
+
+---
+
+## Additional Recommendations
+
+If network errors persist even with retries, users should:
+1. **Check network connection**: Ensure stable internet access
+2. **Disable VPN**: Some VPNs block Google services
+3. **Check browser extensions**: Privacy extensions may block Google's speech servers
+4. **Try a different browser**: Safari uses on-device processing and doesn't have this issue
+5. **Use text input**: The chat interface works as a reliable fallback
+
