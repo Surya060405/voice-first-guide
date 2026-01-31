@@ -7,7 +7,7 @@ import { ChatInput } from './ChatInput';
 import { TranscriptPanel } from './TranscriptPanel';
 import { useSpeech } from '@/hooks/useSpeech';
 import { useConversation } from '@/hooks/useConversation';
-import { LogOut, Trash2, VolumeX, Volume2 } from 'lucide-react';
+import { LogOut, Trash2, VolumeX, Volume2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface SupportInterfaceProps {
@@ -23,6 +23,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
     isListening,
     isMicAvailable,
     isMuted,
+    errorMessage: voiceError,
     startListening,
     stopListening,
     speak,
@@ -40,7 +41,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
     initSession,
   } = useConversation();
 
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef(false);
 
   // Initialize session
@@ -50,12 +51,15 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollAreaRef.current) {
+      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
     }
   }, [messages]);
 
-  // Show error toast
+  // Show error toast for API errors
   useEffect(() => {
     if (error) {
       toast({
@@ -154,7 +158,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
       </header>
 
       {/* Messages */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
+      <ScrollArea className="flex-1" ref={scrollAreaRef}>
         <div className="min-h-full">
           {messages.length === 0 ? (
             <div className="flex h-full min-h-[300px] flex-col items-center justify-center p-8 text-center">
@@ -190,6 +194,14 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
 
       {/* Voice & Input Area */}
       <div className="border-t">
+        {/* Voice Error Message */}
+        {voiceError && (
+          <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{voiceError}</span>
+          </div>
+        )}
+
         <TranscriptPanel transcript={transcript} isListening={isListening} />
         
         {/* Voice Button */}
