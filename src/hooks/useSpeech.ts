@@ -22,13 +22,13 @@ export function useSpeech(): UseSpeechReturn {
   const [transcript, setTranscript] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
+
   // Check browser support once - this is the only thing that permanently disables mic
-  const SpeechRecognition = typeof window !== 'undefined' 
-    ? (window.SpeechRecognition || window.webkitSpeechRecognition) 
+  const SpeechRecognition = typeof window !== 'undefined'
+    ? (window.SpeechRecognition || window.webkitSpeechRecognition)
     : null;
   const [isMicAvailable, setIsMicAvailable] = useState(!!SpeechRecognition);
-  
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const synthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -61,7 +61,7 @@ export function useSpeech(): UseSpeechReturn {
 
     // Stop any ongoing speech
     window.speechSynthesis?.cancel();
-    
+
     // Mark that user wants to listen
     isListeningRef.current = true;
 
@@ -89,7 +89,7 @@ export function useSpeech(): UseSpeechReturn {
 
         // Store final transcript for submission
         finalTranscriptRef.current = fullFinal;
-        
+
         // Display full final + current interim
         setTranscript(fullFinal + currentInterim);
       };
@@ -97,7 +97,7 @@ export function useSpeech(): UseSpeechReturn {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recognition.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
-        
+
         switch (event.error) {
           case 'not-allowed':
             // This is the ONLY error that permanently disables mic
@@ -105,6 +105,7 @@ export function useSpeech(): UseSpeechReturn {
             setErrorMessage('Microphone access denied. Please allow access in browser settings.');
             isListeningRef.current = false;
             setVoiceState('idle');
+            recognitionRef.current = null;
             break;
           case 'network':
             // Soft error - show message but allow retry
@@ -112,6 +113,7 @@ export function useSpeech(): UseSpeechReturn {
             clearErrorAfterDelay();
             isListeningRef.current = false;
             setVoiceState('idle');
+            recognitionRef.current = null;
             break;
           case 'no-speech':
             // Soft error - common, just show brief message
@@ -126,6 +128,7 @@ export function useSpeech(): UseSpeechReturn {
             clearErrorAfterDelay(5000);
             isListeningRef.current = false;
             setVoiceState('idle');
+            recognitionRef.current = null;
             break;
           case 'aborted':
             // User or system aborted - no message needed
@@ -138,6 +141,7 @@ export function useSpeech(): UseSpeechReturn {
             clearErrorAfterDelay();
             isListeningRef.current = false;
             setVoiceState('idle');
+            recognitionRef.current = null;
         }
       };
 
@@ -158,7 +162,7 @@ export function useSpeech(): UseSpeechReturn {
 
       recognitionRef.current = recognition;
     }
-    
+
     try {
       setVoiceState('listening');
       setTranscript('');
@@ -202,12 +206,12 @@ export function useSpeech(): UseSpeechReturn {
 
     // Try to use a natural voice
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v => 
-      v.name.includes('Google') || 
+    const preferredVoice = voices.find(v =>
+      v.name.includes('Google') ||
       v.name.includes('Natural') ||
       v.name.includes('Samantha')
     ) || voices[0];
-    
+
     if (preferredVoice) {
       utterance.voice = preferredVoice;
     }
