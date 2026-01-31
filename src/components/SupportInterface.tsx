@@ -194,8 +194,8 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
 
       {/* Voice & Input Area */}
       <div className="border-t">
-        {/* Voice Error Message */}
-        {voiceError && (
+        {/* Voice Error Message - Only show for critical errors, not context limitations */}
+        {voiceError && !voiceError.includes('unavailable in this context') && (
           <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{voiceError}</span>
@@ -204,22 +204,32 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
 
         <TranscriptPanel transcript={transcript} isListening={isListening} />
         
-        {/* Voice Button */}
-        <div className="flex justify-center py-4">
-          <VoiceButton
-            voiceState={isLoading ? 'processing' : voiceState}
-            isListening={isListening}
-            isMicAvailable={isMicAvailable}
-            onStartListening={startListening}
-            onStopListening={handleStopListening}
-          />
-        </div>
+        {/* Voice Button - Hidden when not available to focus on text input */}
+        {isMicAvailable && !voiceError?.includes('unavailable in this context') && (
+          <div className="flex justify-center py-4">
+            <VoiceButton
+              voiceState={isLoading ? 'processing' : voiceState}
+              isListening={isListening}
+              isMicAvailable={isMicAvailable}
+              onStartListening={startListening}
+              onStopListening={handleStopListening}
+            />
+          </div>
+        )}
+
+        {/* Info banner when voice is not available */}
+        {(!isMicAvailable || voiceError?.includes('unavailable in this context')) && (
+          <div className="mx-4 mt-3 mb-2 flex items-center gap-2 rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Voice input works when published. Use text input below for now.</span>
+          </div>
+        )}
 
         {/* Chat Input */}
         <ChatInput
           onSend={handleTextSend}
           isLoading={isLoading}
-          placeholder={isMicAvailable ? 'Or type your message...' : 'Type your message...'}
+          placeholder="Type your message..."
         />
       </div>
     </div>
