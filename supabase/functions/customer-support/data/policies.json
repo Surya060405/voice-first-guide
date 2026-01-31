@@ -1,0 +1,74 @@
+{
+  "return": {
+    "title": "Return Policy",
+    "description": "Our return policy allows customers to return products within a specified period under certain conditions.",
+    "eligibility": [
+      "Products must be returned within 7 days from the date of delivery",
+      "Items must be unused, unwashed, and in their original packaging with all tags attached",
+      "The product must not be damaged, altered, or show signs of wear"
+    ],
+    "non_returnable": [
+      "Perishable goods such as food items, flowers, or plants",
+      "Intimate or personal care products including innerwear, swimwear, and cosmetics",
+      "Customized or personalized items"
+    ],
+    "process": [
+      "Initiate a return request through our website or customer service within the return window",
+      "Once the return is approved, a pickup will be scheduled or you may ship the item back",
+      "A refund or replacement will be processed after inspection of the returned item"
+    ],
+    "refund_timeline": "Refunds are typically processed within 5-7 business days after the returned item is received and inspected"
+  },
+  "refund": {
+    "title": "Refund Policy",
+    "description": "Our refund policy ensures that customers receive their money back for eligible returns and cancellations.",
+    "eligibility": [
+      "A refund will be issued if the return meets the eligibility criteria",
+      "For cancelled orders, refunds are processed automatically within 3-5 business days",
+      "In case of a failed delivery due to incorrect address or unavailability, refunds may be subject to deductions"
+    ],
+    "modes": [
+      "Refunds will be credited to the original payment method",
+      "If paid via UPI or Net Banking, refunds will reflect in 3-5 business days",
+      "For Credit/Debit cards, it may take up to 7-10 business days depending on the bank"
+    ],
+    "non_refundable": [
+      "Shipping charges unless the return is due to a defect or error on our part",
+      "Products marked as 'non-refundable' at the time of purchase"
+    ]
+  },
+  "cancellation": {
+    "title": "Cancellation Policy",
+    "description": "Our cancellation policy allows customers to cancel orders before they are shipped.",
+    "eligibility": [
+      "Orders can be cancelled before they are shipped",
+      "Once shipped, the order cannot be cancelled but can be returned as per our return policy"
+    ],
+    "process": [
+      "To cancel an order, go to your order history and click 'Cancel Order'",
+      "Alternatively, contact our customer service team within 24 hours of placing the order",
+      "Refunds for cancelled orders will be processed within 3-5 business days"
+    ],
+    "partial_cancellation": "If your order contains multiple items, you may cancel individual items before they are shipped"
+  },
+  "delivery": {
+    "title": "Delivery Timelines",
+    "description": "Our delivery timelines vary based on location and product availability.",
+    "standard": {
+      "urban": "3-7 business days for metro and urban locations",
+      "semi_urban": "7-10 business days for semi-urban and smaller towns",
+      "remote": "10-15 business days for remote areas"
+    },
+    "express": {
+      "availability": "Available in select cities",
+      "timeline": "1-2 business days",
+      "additional_charges": "Express delivery may incur additional charges displayed at checkout"
+    },
+    "tracking": [
+      "Once your order is shipped, you will receive a tracking ID via email and SMS",
+      "You can track your order in real-time through our website or app"
+    ],
+    "delays": "Delays may occur due to unforeseen circumstances such as weather, natural disasters, or high demand periods. We will notify you in case of any delay.",
+    "failed_delivery": "If delivery is unsuccessful due to incorrect address or unavailability, the order will be returned to the warehouse. A re-delivery may be scheduled or a refund processed as per our policy."
+  }
+}
