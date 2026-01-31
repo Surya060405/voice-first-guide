@@ -43,6 +43,12 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef(false);
+  const transcriptRef = useRef('');
+
+  // Keep transcriptRef in sync with transcript state
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
 
   // Initialize session
   useEffect(() => {
@@ -91,10 +97,12 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
   // Handle stop listening - submit if there's transcript
   const handleStopListening = useCallback(() => {
     stopListening();
-    if (transcript.trim()) {
+    // Use ref to get current transcript value (avoids stale closure)
+    const currentTranscript = transcriptRef.current;
+    if (currentTranscript.trim()) {
       handleVoiceSubmit();
     }
-  }, [stopListening, transcript, handleVoiceSubmit]);
+  }, [stopListening, handleVoiceSubmit]);
 
   // Handle text message
   const handleTextSend = useCallback(async (message: string) => {
