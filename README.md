@@ -1,73 +1,74 @@
-# Welcome to your Lovable project
+# Nova Voice - AI-Powered Customer Support Agent
 
-## Project info
+Nova Voice is a state-of-the-art, voice-first intelligent customer support agent designed for modern e-commerce. It leverages advanced Large Language Models (LLMs) and Edge Computing to provide near-instant responses, helping customers track orders, browse products, and resolve issues purely through voice interaction.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+---
 
-## How can I edit this code?
+## 🚀 Features
 
-There are several ways of editing your application.
+-   **Voice-First Interface**: Native browser-based Speech-to-Text (STT) and Text-to-Speech (TTS) for zero-lag interaction.
+-   **Intelligent Reasoning**: Powered by Google Gemini 1.5 Flash to understand complex user intents and follow-up questions.
+-   **Context-Aware**: Maintains conversation history (last order discussed, product interests) to provide personalized assistance.
+-   **Live Data Integration**: Uses AI function calling to interact with real-time product databases and order management systems.
+-   **Premium UI**: Built with a modern, glassmorphic design system using React and Tailwind CSS.
+-   **Low Latency**: Optimized backend via Supabase Edge Functions for global performance.
 
-**Use Lovable**
+## 🛠️ Tech Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+-   **Frontend**: React 18, Vite, TypeScript
+-   **Styling**: Tailwind CSS, shadcn/ui, Lucide Icons
+-   **AI Engine**: Google Gemini 1.5 Flash (via Gateway)
+-   **Backend & Orchestration**: Supabase Edge Functions (Deno)
+-   **Voice Processing**: Web Speech API (Native Browser Support)
+-   **State Management**: React Hooks & TanStack Query
 
-Changes made via Lovable will be committed automatically to this repo.
+## 🏗️ System Architecture
 
-**Use your preferred IDE**
+Nova Voice follows a serverless, decoupled architecture:
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+1.  **Client-Side**: Captures voice input locally, converts to text, and sends a lightweight JSON payload.
+2.  **Edge Compute**: Supabase Edge Functions manage the business logic and session context.
+3.  **AI Layer**: Gemini processes the intent and decides whether to trigger "Tools" (like checking order status).
+4.  **Response**: The AI response is streamed back and synthesized into a natural-sounding voice on the client.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## 🏁 Getting Started
 
-Follow these steps:
+### Prerequisites
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+-   Node.js (v18+)
+-   npm or bun
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### Installation
 
-# Step 3: Install the necessary dependencies.
-npm i
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd voice-first-guide
+   ```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-**Edit a file directly in GitHub**
+3. Configure Environment Variables:
+   Create a `.env` file in the root and add your Supabase and AI Gateway credentials:
+   ```env
+   VITE_SUPABASE_URL=your_supabase_url
+   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
 
-**Use GitHub Codespaces**
+## 📜 Business Use Cases
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+-   **E-commerce**: Track packages, search for items by description, and handle return requests.
+-   **SaaS Support**: Answer FAQ queries and guide users through platform features.
+-   **Booking Services**: Check reservation status and provide policy information.
 
-## What technologies are used for this project?
+---
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+*This project was developed for the Hackathon 2026.*
