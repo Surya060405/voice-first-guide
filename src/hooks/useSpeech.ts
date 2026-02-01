@@ -35,6 +35,7 @@ export function useSpeech(): UseSpeechReturn {
   const isListeningRef = useRef(false); // Track user intent to listen
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const finalTranscriptRef = useRef(''); // Track accumulated final transcript
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voicesLoadedRef = useRef(false);
 
   // Clear error after a delay
@@ -57,7 +58,7 @@ export function useSpeech(): UseSpeechReturn {
     };
 
     loadVoices();
-    
+
     // Chrome loads voices asynchronously
     if (window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
@@ -116,6 +117,18 @@ export function useSpeech(): UseSpeechReturn {
 
         // Display full final + current interim
         setTranscript(fullFinal + currentInterim);
+
+        // Reset silence timer on any speech
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+
+        // If we have some transcript, set timer to stop listening after silence
+        if (fullFinal || currentInterim) {
+          silenceTimerRef.current = setTimeout(() => {
+            stopListening();
+          }, 2500); // 2.5 seconds of silence
+        }
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -214,6 +227,12 @@ export function useSpeech(): UseSpeechReturn {
         // Already stopped
       }
     }
+
+    // Clear silence timer
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
+
     setVoiceState('idle');
   }, []);
 
@@ -224,7 +243,7 @@ export function useSpeech(): UseSpeechReturn {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    
+
     // Voice settings for clear, professional tone
     utterance.rate = 0.95;      // Slightly slower for clarity
     utterance.pitch = 0.95;     // Slightly lower for male voice
@@ -233,9 +252,9 @@ export function useSpeech(): UseSpeechReturn {
 
     // Get available voices
     const voices = window.speechSynthesis.getVoices();
-    
+
     // Filter for US English voices
-    const usEnglishVoices = voices.filter(v => 
+    const usEnglishVoices = voices.filter(v =>
       v.lang === 'en-US' || v.lang.startsWith('en-US')
     );
 
@@ -257,7 +276,7 @@ export function useSpeech(): UseSpeechReturn {
 
     // First: Try to find a preferred male voice
     for (const name of preferredMaleVoiceNames) {
-      selectedVoice = usEnglishVoices.find(v => 
+      selectedVoice = usEnglishVoices.find(v =>
         v.name.includes(name)
       ) || null;
       if (selectedVoice) break;
@@ -265,7 +284,7 @@ export function useSpeech(): UseSpeechReturn {
 
     // Second: Look for any US English voice with 'Male' in name
     if (!selectedVoice) {
-      selectedVoice = usEnglishVoices.find(v => 
+      selectedVoice = usEnglishVoices.find(v =>
         v.name.toLowerCase().includes('male')
       ) || null;
     }
@@ -273,7 +292,7 @@ export function useSpeech(): UseSpeechReturn {
     // Third: Look for voices that typically sound male (David, James, etc)
     if (!selectedVoice) {
       const maleNames = ['david', 'james', 'mark', 'guy', 'alex', 'aaron', 'fred'];
-      selectedVoice = usEnglishVoices.find(v => 
+      selectedVoice = usEnglishVoices.find(v =>
         maleNames.some(name => v.name.toLowerCase().includes(name))
       ) || null;
     }
@@ -299,6 +318,10 @@ export function useSpeech(): UseSpeechReturn {
 
     utterance.onend = () => {
       setVoiceState('idle');
+      // Auto-start listening after speaking finishes
+      if (document.visibilityState === 'visible') {
+        startListening();
+      }
     };
 
     utterance.onerror = () => {

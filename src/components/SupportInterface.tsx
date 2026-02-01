@@ -79,7 +79,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
   // Handle voice message submission
   const handleVoiceSubmit = useCallback(async () => {
     if (!transcript.trim() || processingRef.current) return;
-    
+
     processingRef.current = true;
     const message = transcript.trim();
     clearTranscript();
@@ -113,6 +113,29 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
       // Error is handled by the hook
     }
   }, [sendMessage, speak]);
+
+  // Handle global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        // Prevent default scrolling behavior if not in an input
+        const activeElement = document.activeElement;
+        const isInputActive = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA' || activeElement?.getAttribute('contenteditable') === 'true';
+
+        if (!isInputActive) {
+          e.preventDefault();
+          if (isListening) {
+            handleStopListening();
+          } else {
+            startListening();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isListening, handleStopListening, startListening]);
 
   // Handle clear history
   const handleClearHistory = () => {
@@ -175,7 +198,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
               </div>
               <h2 className="mb-2 text-lg font-semibold">Welcome to Customer Support</h2>
               <p className="max-w-sm text-sm text-muted-foreground">
-                I can help you with product searches, order tracking, returns, cancellations, and policy questions. 
+                I can help you with product searches, order tracking, returns, cancellations, and policy questions.
                 {isMicAvailable ? ' Tap the microphone or type your question below.' : ' Type your question below.'}
               </p>
             </div>
@@ -184,7 +207,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
               <ChatMessage key={message.id} message={message} />
             ))
           )}
-          
+
           {isLoading && (
             <div className="flex gap-3 p-4">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary">
@@ -211,7 +234,7 @@ export function SupportInterface({ customerId, onLogout }: SupportInterfaceProps
         )}
 
         <TranscriptPanel transcript={transcript} isListening={isListening} />
-        
+
         {/* Voice Button - Always show if browser supports speech recognition */}
         {isMicAvailable && (
           <div className="flex justify-center py-4">

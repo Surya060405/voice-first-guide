@@ -36,7 +36,7 @@ export function VoiceButton({
     if (!isMicAvailable) return 'Mic unavailable';
     if (voiceState === 'listening') return 'Listening...';
     if (voiceState === 'processing') return 'Processing...';
-    if (voiceState === 'speaking') return 'Speaking...';
+    if (voiceState === 'speaking') return 'Tap to interrupt';
     return 'Tap to speak';
   };
 
@@ -44,7 +44,7 @@ export function VoiceButton({
     <div className="flex flex-col items-center gap-3">
       <button
         onClick={handleClick}
-        disabled={!isMicAvailable || voiceState === 'processing' || voiceState === 'speaking'}
+        disabled={!isMicAvailable || voiceState === 'processing'}
         className={cn(
           'relative flex h-24 w-24 items-center justify-center rounded-full transition-all duration-300',
           'focus:outline-none focus:ring-4 focus:ring-ring focus:ring-offset-2',
@@ -62,15 +62,15 @@ export function VoiceButton({
             <span className="absolute inset-2 rounded-full bg-destructive animate-pulse opacity-50" />
           </>
         )}
-        
+
         {/* Speaking animation */}
         {voiceState === 'speaking' && (
           <span className="absolute inset-0 rounded-full bg-secondary animate-pulse" />
         )}
-        
+
         <span className="relative z-10">{getIcon()}</span>
       </button>
-      
+
       <span className={cn(
         'text-sm font-medium',
         isListening ? 'text-destructive' : 'text-muted-foreground'
